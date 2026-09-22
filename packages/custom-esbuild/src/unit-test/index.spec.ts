@@ -40,14 +40,19 @@ describe('executeCustomEsbuildUnitTestBuilder', () => {
 
   // Angular CLI fills unset array options with `[]` for every builder that is not
   // `@angular/build:*`, and `@angular/build` treats an empty array as user-provided.
-  it.each(['browsers', 'coverageInclude', 'coverageExclude', 'coverageReporters'] as const)(
-    'should not pass an empty %s array to the Angular builder',
-    async option => {
-      const delegated = await delegatedOptions({ [option]: [] });
+  it.each([
+    'browsers',
+    'coverageInclude',
+    'coverageExclude',
+    'coverageReporters',
+    'reporters',
+    'setupFiles',
+    'exclude',
+  ] as const)('should not pass an empty %s array to the Angular builder', async option => {
+    const delegated = await delegatedOptions({ [option]: [] });
 
-      expect(delegated).not.toHaveProperty(option);
-    }
-  );
+    expect(delegated).not.toHaveProperty(option);
+  });
 
   it('should pass non-empty array options to the Angular builder', async () => {
     const delegated = await delegatedOptions({
@@ -55,6 +60,8 @@ describe('executeCustomEsbuildUnitTestBuilder', () => {
       coverageInclude: ['src/**/*.ts'],
       coverageExclude: ['src/**/*.stories.ts'],
       coverageReporters: ['html'] as CustomEsbuildUnitTestSchema['coverageReporters'],
+      reporters: ['junit'] as CustomEsbuildUnitTestSchema['reporters'],
+      setupFiles: ['src/test-setup.ts'],
     });
 
     expect(delegated).toMatchObject({
@@ -62,6 +69,8 @@ describe('executeCustomEsbuildUnitTestBuilder', () => {
       coverageInclude: ['src/**/*.ts'],
       coverageExclude: ['src/**/*.stories.ts'],
       coverageReporters: ['html'],
+      reporters: ['junit'],
+      setupFiles: ['src/test-setup.ts'],
     });
   });
 

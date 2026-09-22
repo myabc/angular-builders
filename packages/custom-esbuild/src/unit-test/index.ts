@@ -11,26 +11,25 @@ import {
 } from '../custom-esbuild-schema';
 
 // Angular CLI only skips filling unset array options with `[]` for `@angular/build:*`
-// builders. `@angular/build` treats an empty array as user-provided, so these have to
-// reach it as `undefined`, exactly as they do for `@angular/build:unit-test`.
-const ARRAY_OPTIONS_UNSET_WHEN_EMPTY = [
-  'browsers',
-  'coverageInclude',
-  'coverageExclude',
-  'coverageReporters',
-] as const;
-
-export function executeCustomEsbuildUnitTestBuilder(
-  options: CustomEsbuildUnitTestSchema,
-  context: BuilderContext
-) {
-  for (const option of ARRAY_OPTIONS_UNSET_WHEN_EMPTY) {
+// builders. `@angular/build` treats an empty array as user-provided (e.g. `[]` for
+// `coverageReporters` runs no reporter and `[]` for `reporters` discards the ones set
+// in the Vitest config file), so empty arrays have to reach it as `undefined`, exactly
+// as they do for `@angular/build:unit-test`.
+function dropEmptyArrayOptions(options: CustomEsbuildUnitTestSchema) {
+  for (const option of Object.keys(options) as (keyof CustomEsbuildUnitTestSchema)[]) {
     const value = options[option];
 
     if (Array.isArray(value) && !value.length) {
       delete options[option];
     }
   }
+}
+
+export function executeCustomEsbuildUnitTestBuilder(
+  options: CustomEsbuildUnitTestSchema,
+  context: BuilderContext
+) {
+  dropEmptyArrayOptions(options);
 
   const buildTarget = targetFromTargetString(options.buildTarget);
 
