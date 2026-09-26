@@ -1,5 +1,6 @@
-import { BuilderContext } from '@angular-devkit/architect';
+import { BuilderContext, Target } from '@angular-devkit/architect';
 import { executeUnitTestBuilder } from '@angular/build';
+import { json } from '@angular-devkit/core';
 import { firstValueFrom, of } from 'rxjs';
 
 import { CustomEsbuildUnitTestSchema } from '../custom-esbuild-schema';
@@ -13,11 +14,20 @@ const mockedExecuteUnitTestBuilder = executeUnitTestBuilder as jest.MockedFuncti
 >;
 
 describe('executeCustomEsbuildUnitTestBuilder', () => {
+  const testTarget: Target = { project: 'app', target: 'test' };
+
+  // Options as written in angular.json for the test target (plus configurations),
+  // i.e. what `context.getTargetOptions(context.target)` returns before the CLI's
+  // schema transform fills unset arrays with `[]`.
+  let rawTestOptions: json.JsonObject | null;
+
   const context = {
     workspaceRoot: '/workspace',
     logger: {},
-    target: { project: 'app', target: 'test' },
-    getTargetOptions: jest.fn().mockResolvedValue({}),
+    target: testTarget,
+    getTargetOptions: jest.fn(async (target: Target) =>
+      target === testTarget ? rawTestOptions : {}
+    ),
   } as unknown as BuilderContext;
 
   const baseOptions = {
@@ -25,9 +35,12 @@ describe('executeCustomEsbuildUnitTestBuilder', () => {
     tsConfig: 'tsconfig.spec.json',
   } as CustomEsbuildUnitTestSchema;
 
-  async function delegatedOptions(options: Partial<CustomEsbuildUnitTestSchema>) {
+  async function delegatedOptions(
+    options: Partial<CustomEsbuildUnitTestSchema>,
+    builderContext: BuilderContext = context
+  ) {
     await firstValueFrom(
-      executeCustomEsbuildUnitTestBuilder({ ...baseOptions, ...options }, context)
+      executeCustomEsbuildUnitTestBuilder({ ...baseOptions, ...options }, builderContext)
     );
 
     return mockedExecuteUnitTestBuilder.mock.calls[0][0];
@@ -35,6 +48,7 @@ describe('executeCustomEsbuildUnitTestBuilder', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    rawTestOptions = {};
     mockedExecuteUnitTestBuilder.mockReturnValue(of({ success: true }) as never);
   });
 
@@ -48,10 +62,47 @@ describe('executeCustomEsbuildUnitTestBuilder', () => {
     'reporters',
     'setupFiles',
     'exclude',
-  ] as const)('should not pass an empty %s array to the Angular builder', async option => {
-    const delegated = await delegatedOptions({ [option]: [] });
+  ] as const)(
+    'should not pass an empty %s array that is not in angular.json to the Angular builder',
+    async option => {
+      const delegated = await delegatedOptions({ [option]: [] });
 
-    expect(delegated).not.toHaveProperty(option);
+      expect(delegated).not.toHaveProperty(option);
+    }
+  );
+
+  it.each(['include', 'coverageReporters', 'reporters'] as const)(
+    'should pass an explicit empty %s array from angular.json to the Angular builder',
+    async option => {
+      rawTestOptions = { [option]: [] };
+
+      const delegated = await delegatedOptions({ [option]: [] });
+
+      expect(delegated).toHaveProperty(option, []);
+    }
+  );
+
+  it('should read the raw options of the test target being run', async () => {
+    await delegatedOptions({});
+
+    expect(context.getTargetOptions).toHaveBeenCalledWith(testTarget);
+  });
+
+  it('should drop empty arrays when the target has no raw options', async () => {
+    rawTestOptions = null;
+
+    const delegated = await delegatedOptions({ coverageReporters: [] });
+
+    expect(delegated).not.toHaveProperty('coverageReporters');
+  });
+
+  it('should drop empty arrays when the builder runs without a target', async () => {
+    const targetlessContext = { ...context, target: undefined } as unknown as BuilderContext;
+
+    const delegated = await delegatedOptions({ coverageReporters: [] }, targetlessContext);
+
+    expect(delegated).not.toHaveProperty('coverageReporters');
+    expect(context.getTargetOptions).not.toHaveBeenCalledWith(undefined);
   });
 
   it('should pass non-empty array options to the Angular builder', async () => {
